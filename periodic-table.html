@@ -611,7 +611,7 @@ function drawAtomDiagram(el) {
   const shells = getElectronShells(el.z);
   const numShells = shells.length;
   const cx = 160, cy = 160;
-  const nucRadius = numShells <= 2 ? 28 : (numShells <= 4 ? 22 : 18);
+  const nucRadius = numShells <= 2 ? 36 : (numShells <= 4 ? 30 : 26);
   const minOrbit = nucRadius + 22;
   const maxOrbit = 145;
   const orbitStep = numShells > 1 ? (maxOrbit - minOrbit) / (numShells - 1) : 0;
@@ -653,8 +653,8 @@ function drawAtomDiagram(el) {
   }
 
   // Nucleus label
-  svg += `<text x="${cx}" y="${cy - 1}" text-anchor="middle" fill="#fff" font-size="10" font-weight="800">${el.sym}</text>`;
-  svg += `<text x="${cx}" y="${cy + 9}" text-anchor="middle" fill="#ffcccc" font-size="7">${protons}p ${neutrons > 0 ? neutrons + 'n' : ''}</text>`;
+  svg += `<text x="${cx}" y="${cy - 2}" text-anchor="middle" fill="#fff" font-size="14" font-weight="800">${el.sym}</text>`;
+  svg += `<text x="${cx}" y="${cy + 12}" text-anchor="middle" fill="#ffcccc" font-size="9">${protons}p ${neutrons > 0 ? neutrons + 'n' : ''}</text>`;
 
   // Electron shells
   const shellColors = ['#66ddff', '#44bbff', '#22aaee', '#00aacc', '#0088aa', '#006688', '#004466'];
