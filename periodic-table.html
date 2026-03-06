@@ -106,6 +106,14 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 .exam-relevance-bar { height:8px; border-radius:4px; background:var(--input-bg); margin-top:6px; overflow:hidden; }
 .exam-relevance-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,#10b981,#eab308,#ef4444); }
 
+/* Atomic Diagram */
+.atom-diagram-container { display:flex; flex-direction:column; align-items:center; margin:16px 0; padding:20px; background:var(--card-bg); border-radius:12px; border:1px solid var(--border); }
+.atom-diagram-container h4 { font-size:14px; font-weight:700; margin-bottom:12px; color:var(--text); }
+.atom-diagram-legend { display:flex; gap:16px; margin-top:12px; font-size:11px; color:var(--text2); flex-wrap:wrap; justify-content:center; }
+.atom-diagram-legend span { display:flex; align-items:center; gap:4px; }
+.atom-diagram-legend .dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+.shell-label-text { font-size:10px; fill:var(--text2); }
+
 /* Quiz */
 .quiz-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:200; justify-content:center; align-items:center; backdrop-filter:blur(6px); }
 .quiz-overlay.active { display:flex; }
@@ -585,6 +593,119 @@ function filterByCategory(cat) {
   });
 }
 
+function getElectronShells(z) {
+  const shells = [];
+  const maxE = [2, 8, 18, 32, 32, 18, 8, 2];
+  let remaining = z;
+  // Simple shell filling (2, 8, 8, 18, 18, 32...)
+  const simpleFill = [2, 8, 8, 18, 18, 32, 32, 32];
+  for (let i = 0; i < simpleFill.length && remaining > 0; i++) {
+    const e = Math.min(remaining, simpleFill[i]);
+    shells.push(e);
+    remaining -= e;
+  }
+  return shells;
+}
+
+function drawAtomDiagram(el) {
+  const shells = getElectronShells(el.z);
+  const numShells = shells.length;
+  const cx = 160, cy = 160;
+  const nucRadius = numShells <= 2 ? 28 : (numShells <= 4 ? 22 : 18);
+  const minOrbit = nucRadius + 22;
+  const maxOrbit = 145;
+  const orbitStep = numShells > 1 ? (maxOrbit - minOrbit) / (numShells - 1) : 0;
+
+  let svg = `<svg viewBox="0 0 320 320" width="280" height="280" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;">`;
+
+  // Nucleus glow
+  svg += `<defs>
+    <radialGradient id="nucGlow"><stop offset="0%" stop-color="#ff6b6b" stop-opacity="0.4"/><stop offset="100%" stop-color="#ff6b6b" stop-opacity="0"/></radialGradient>
+    <radialGradient id="nucFill"><stop offset="0%" stop-color="#ff8a8a"/><stop offset="100%" stop-color="#cc3333"/></radialGradient>
+    <radialGradient id="protonFill"><stop offset="0%" stop-color="#ff7070"/><stop offset="100%" stop-color="#cc2222"/></radialGradient>
+    <radialGradient id="neutronFill"><stop offset="0%" stop-color="#8888ff"/><stop offset="100%" stop-color="#4444cc"/></radialGradient>
+    <radialGradient id="eFill"><stop offset="0%" stop-color="#66ddff"/><stop offset="100%" stop-color="#0099cc"/></radialGradient>
+  </defs>`;
+  svg += `<circle cx="${cx}" cy="${cy}" r="${nucRadius + 15}" fill="url(#nucGlow)"/>`;
+
+  // Nucleus with protons and neutrons
+  const protons = el.z;
+  const neutrons = Math.round(el.mass) - protons;
+  svg += `<circle cx="${cx}" cy="${cy}" r="${nucRadius}" fill="url(#nucFill)" stroke="#ff6666" stroke-width="1" opacity="0.9"/>`;
+
+  // Draw some protons and neutrons inside nucleus (simplified)
+  const nucleons = Math.min(protons + neutrons, 20);
+  if (nucleons <= 20) {
+    const pCount = Math.min(protons, Math.ceil(nucleons * protons / (protons + neutrons)));
+    const nCount = nucleons - pCount;
+    const particleR = nucRadius <= 20 ? 3 : 4;
+    const positions = [];
+    for (let i = 0; i < nucleons; i++) {
+      const angle = (2 * Math.PI * i / nucleons) + (i % 2) * 0.3;
+      const dist = (i < nucleons / 2) ? nucRadius * 0.35 : nucRadius * 0.65;
+      positions.push({ x: cx + dist * Math.cos(angle), y: cy + dist * Math.sin(angle) });
+    }
+    for (let i = 0; i < nucleons; i++) {
+      const isProton = i < pCount;
+      const fill = isProton ? 'url(#protonFill)' : 'url(#neutronFill)';
+      svg += `<circle cx="${positions[i].x.toFixed(1)}" cy="${positions[i].y.toFixed(1)}" r="${particleR}" fill="${fill}" stroke="${isProton ? '#ff4444' : '#6666cc'}" stroke-width="0.5" opacity="0.85"/>`;
+    }
+  }
+
+  // Nucleus label
+  svg += `<text x="${cx}" y="${cy - 1}" text-anchor="middle" fill="#fff" font-size="10" font-weight="800">${el.sym}</text>`;
+  svg += `<text x="${cx}" y="${cy + 9}" text-anchor="middle" fill="#ffcccc" font-size="7">${protons}p ${neutrons > 0 ? neutrons + 'n' : ''}</text>`;
+
+  // Electron shells
+  const shellColors = ['#66ddff', '#44bbff', '#22aaee', '#00aacc', '#0088aa', '#006688', '#004466'];
+  for (let i = 0; i < numShells; i++) {
+    const r = numShells === 1 ? minOrbit : minOrbit + i * orbitStep;
+    const color = shellColors[i % shellColors.length];
+
+    // Orbit ring
+    svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="1" opacity="0.3" stroke-dasharray="4,3"/>`;
+
+    // Shell label (n=1, n=2 etc.)
+    svg += `<text x="${cx + r + 3}" y="${cy - 4}" class="shell-label-text" font-size="8" fill="${color}" opacity="0.7">n=${i + 1}</text>`;
+
+    // Electrons on this shell
+    const eCount = shells[i];
+    const electronR = numShells <= 3 ? 5 : (numShells <= 5 ? 4 : 3.5);
+    for (let j = 0; j < eCount; j++) {
+      const angle = (2 * Math.PI * j / eCount) - Math.PI / 2;
+      const ex = cx + r * Math.cos(angle);
+      const ey = cy + r * Math.sin(angle);
+      svg += `<circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="${electronR}" fill="url(#eFill)" stroke="#44ccee" stroke-width="0.7"/>`;
+      // Minus sign on electron
+      if (electronR >= 4) {
+        svg += `<text x="${ex.toFixed(1)}" y="${(ey + 1).toFixed(1)}" text-anchor="middle" fill="#fff" font-size="6" font-weight="bold">−</text>`;
+      }
+    }
+
+    // Electron count for this shell
+    svg += `<text x="${cx}" y="${cy + r + (electronR + 6)}" text-anchor="middle" fill="${color}" font-size="8" font-weight="600" opacity="0.8">${eCount}e⁻</text>`;
+  }
+
+  svg += `</svg>`;
+
+  // Build electron shell notation string
+  const shellNotation = shells.join(', ');
+
+  return `
+    <div class="atom-diagram-container">
+      <h4>Atomic Structure — Bohr Model</h4>
+      ${svg}
+      <div style="margin-top:8px;font-size:13px;font-weight:600;color:var(--text);">Electron Arrangement: [${shellNotation}]</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:2px;">Total electrons: ${el.z} | Protons: ${protons} | Neutrons: ${neutrons > 0 ? neutrons : '~' + (Math.round(el.mass) - protons)}</div>
+      <div class="atom-diagram-legend">
+        <span><span class="dot" style="background:#cc3333;"></span> Proton (+)</span>
+        <span><span class="dot" style="background:#5555cc;"></span> Neutron (0)</span>
+        <span><span class="dot" style="background:#0099cc;"></span> Electron (−)</span>
+        <span><span class="dot" style="background:transparent;border:1px dashed #66ddff;"></span> Electron Shell</span>
+      </div>
+    </div>`;
+}
+
 function showElement(z) {
   const el = ELEMENTS.find(e => e.z === z);
   if (!el) return;
@@ -615,6 +736,7 @@ function showElement(z) {
       <div class="prop-item"><div class="prop-label">State (Room Temp)</div><div class="prop-value">${el.state.charAt(0).toUpperCase() + el.state.slice(1)}</div></div>
       <div class="prop-item"><div class="prop-label">Discovered</div><div class="prop-value small">${el.discovered} by ${el.discoverer}</div></div>
     </div>
+    ${drawAtomDiagram(el)}
     <div class="section-title">Exam Relevance</div>
     <div style="display:flex;align-items:center;gap:10px;">
       <span style="font-size:24px;font-weight:800;">${el.examRel}%</span>
