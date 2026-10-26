@@ -1,0 +1,444 @@
+<title>Giza Eternal</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Marcellus&family=IBM+Plex+Mono:wght@400&display=swap">
+<style>
+/* Layout: full-bleed 3D scene, brand top-left, caption centre-low, control rail bottom. Single deliberate night-gold look. */
+:root{
+  --ink:#0b0a12; --gold:#e8c46a; --gold-soft:#f4e2b0; --lapis:#2b4fa8; --turq:#3fc1c0; --sand:#d9b77a;
+  --glass:rgba(12,10,22,.55); --line:rgba(232,196,106,.35);
+  --display:"Cinzel","Trajan Pro",Georgia,serif; --body:"Marcellus",Georgia,serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+  color-scheme:dark;
+}
+html,body{height:100%;overflow:hidden}
+body{background:var(--ink);color:var(--gold-soft);font-family:var(--body)}
+canvas{display:block}
+#app{position:fixed;inset:0}
+.brand{position:fixed;top:calc(16px + env(safe-area-inset-top,0px));left:max(16px,env(safe-area-inset-left,0px));max-width:min(420px,calc(100% - 32px));pointer-events:none;text-shadow:0 2px 12px rgba(0,0,0,.6)}
+.brand small{font-family:var(--mono);font-size:11px;letter-spacing:.25em;text-transform:uppercase;color:var(--gold)}
+.brand h1{font-family:var(--display);font-weight:700;font-size:clamp(28px,5vw,52px);line-height:1;margin:.15em 0 .2em;letter-spacing:.06em;color:var(--gold-soft);text-wrap:balance}
+.brand p{margin:0;font-size:clamp(14px,1.6vw,17px);line-height:1.45;opacity:.9}
+.caption{position:fixed;left:50%;bottom:calc(120px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);width:min(680px,calc(100% - 32px));text-align:center;pointer-events:none;font-family:var(--display);font-size:clamp(18px,2.6vw,28px);letter-spacing:.08em;color:var(--gold-soft);text-shadow:0 0 18px rgba(232,196,106,.6),0 2px 8px #000;transition:opacity .8s}
+.caption span{display:block;font-family:var(--body);font-size:.55em;letter-spacing:.04em;opacity:.85;margin-top:.4em}
+.rail{position:fixed;left:0;right:0;bottom:0;padding:12px max(16px,env(safe-area-inset-right,0px)) calc(14px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-wrap:wrap;gap:8px;justify-content:center;background:linear-gradient(transparent,rgba(5,4,12,.75))}
+button{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold-soft);background:var(--glass);border:1px solid var(--line);padding:10px 14px;border-radius:2px;cursor:pointer;backdrop-filter:blur(6px)}
+button:hover{border-color:var(--gold)}
+button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+button[aria-pressed="true"]{background:var(--gold);color:var(--ink);border-color:var(--gold)}
+.facts{position:fixed;top:calc(16px + env(safe-area-inset-top,0px));right:max(16px,env(safe-area-inset-right,0px));font-family:var(--mono);font-size:11px;line-height:1.7;background:var(--glass);border:1px solid var(--line);padding:10px 12px;font-variant-numeric:tabular-nums;backdrop-filter:blur(6px)}
+.facts b{color:var(--gold);font-weight:400}
+.label{position:fixed;transform:translate(-50%,-100%);font-family:var(--display);font-size:12px;letter-spacing:.2em;color:var(--gold-soft);text-shadow:0 1px 6px #000;pointer-events:none;white-space:nowrap}
+@media (max-width:640px){.facts{display:none}.caption{bottom:calc(150px + env(safe-area-inset-bottom,0px))}}
+</style>
+
+<div id="app"></div>
+<header class="brand">
+  <small>Giza Plateau · 1:1 scale</small>
+  <h1>Giza Eternal</h1>
+  <p>Stand beside the last wonder of the ancient world at true size. By night, the kings speak in light.</p>
+</header>
+<aside class="facts" aria-label="Real dimensions">
+  <div><b>Khufu</b> 230.3 m base · 138.5 m high</div>
+  <div><b>Khafre</b> 215.3 m base · 136.4 m high</div>
+  <div><b>Menkaure</b> 102.2 m base · 61 m high</div>
+  <div><b>Sphinx</b> 73 m long · 20 m high</div>
+</aside>
+<div class="caption" id="cap" aria-live="polite"></div>
+<div id="labels"></div>
+<nav class="rail" aria-label="Scene controls">
+  <button id="bDay" aria-pressed="true">Day</button>
+  <button id="bNight" aria-pressed="false">Night</button>
+  <button id="bShow" aria-pressed="false">Light show</button>
+  <button id="bView">View: Aerial</button>
+  <button id="bSound" aria-pressed="false">Sound</button>
+</nav>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(() => {
+// ---------- renderer / scene ----------
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xe9d3a8, 4000, 14000);
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 1, 30000);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.minDistance = 20; controls.maxDistance = 6000;
+controls.autoRotate = true; controls.autoRotateSpeed = 0.25;
+
+// World units = metres. x = east, z = south. Positions from real coordinates (Khufu at origin).
+const SITES = {
+  khufu:    { x: 0,    z: 0,   base: 230.3, h: 138.5, y: 0,  name: 'KHUFU' },
+  khafre:   { x: -328, z: 344, base: 215.3, h: 136.4, y: 10, name: 'KHAFRE' },   // stands on ~10 m higher bedrock
+  menkaure: { x: -589, z: 743, base: 102.2, h: 61,    y: 4,  name: 'MENKAURE' },
+};
+const SPHINX = { x: 320, z: 420 };
+
+// ---------- sky ----------
+const skyUni = { top: { value: new THREE.Color(0x3f7fc4) }, bottom: { value: new THREE.Color(0xe9d3a8) } };
+const sky = new THREE.Mesh(new THREE.SphereGeometry(14000, 32, 16), new THREE.ShaderMaterial({
+  uniforms: skyUni, side: THREE.BackSide, depthWrite: false, fog: false,
+  vertexShader: 'varying vec3 p; void main(){ p = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }',
+  fragmentShader: 'uniform vec3 top; uniform vec3 bottom; varying vec3 p; void main(){ float h = clamp(normalize(p).y*2.2,0.,1.); gl_FragColor = vec4(mix(bottom,top,pow(h,.7)),1.); }'
+}));
+scene.add(sky);
+
+const starGeo = new THREE.BufferGeometry(); const sp = [];
+for (let i = 0; i < 3000; i++) {
+  const u = Math.random(), v = Math.random() * 0.9 + 0.08;
+  const th = u * Math.PI * 2, ph = Math.acos(1 - v);
+  sp.push(12000 * Math.sin(ph) * Math.cos(th), 12000 * Math.cos(ph), 12000 * Math.sin(ph) * Math.sin(th));
+}
+starGeo.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
+const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 2, sizeAttenuation: false, transparent: true, opacity: 0, fog: false }));
+scene.add(stars);
+
+const moon = new THREE.Mesh(new THREE.SphereGeometry(180, 24, 16), new THREE.MeshBasicMaterial({ color: 0xf2ecd8, fog: false, transparent: true, opacity: 0 }));
+moon.position.set(-4000, 3200, -7000); scene.add(moon);
+
+// ---------- lights ----------
+const hemi = new THREE.HemisphereLight(0xbfd8ff, 0xc9a46a, 0.6); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff1d6, 1.6);
+sun.position.set(1800, 2200, 900); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -1300, right: 1300, top: 1300, bottom: -1300, near: 100, far: 6000 });
+sun.target.position.set(-250, 0, 350); scene.add(sun, sun.target);
+
+// ---------- textures ----------
+function canvasTex(w, h, draw) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t;
+}
+const stoneTex = canvasTex(512, 512, (g, w, h) => {
+  g.fillStyle = '#c9a66b'; g.fillRect(0, 0, w, h);
+  const rows = 16;
+  for (let r = 0; r < rows; r++) {
+    const y = r * h / rows; let x = -Math.random() * 60;
+    while (x < w) {
+      const bw = 40 + Math.random() * 50, l = 150 + Math.random() * 50;
+      g.fillStyle = `rgb(${l + 40},${l + 15},${l - 40})`; g.fillRect(x + 1, y + 1, bw - 2, h / rows - 3);
+      x += bw;
+    }
+    g.fillStyle = 'rgba(60,40,20,.55)'; g.fillRect(0, y + h / rows - 3, w, 3);
+  }
+});
+stoneTex.encoding = THREE.sRGBEncoding;
+
+// Hieroglyph projection mapping (emissive): ankh, eye, bird, wave, reed rows.
+const glyphTex = canvasTex(512, 512, (g, w, h) => {
+  g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+  g.strokeStyle = g.fillStyle = '#fff'; g.lineWidth = 5; g.lineCap = 'round';
+  const glyphs = [
+    (x, y) => { g.beginPath(); g.ellipse(x, y - 14, 9, 13, 0, 0, 7); g.stroke(); g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 34); g.moveTo(x - 16, y + 4); g.lineTo(x + 16, y + 4); g.stroke(); },
+    (x, y) => { g.beginPath(); g.ellipse(x, y, 22, 10, 0, 0, 7); g.stroke(); g.beginPath(); g.arc(x, y, 5, 0, 7); g.fill(); g.beginPath(); g.moveTo(x - 6, y + 10); g.lineTo(x - 10, y + 28); g.moveTo(x + 6, y + 10); g.quadraticCurveTo(x + 22, y + 30, x + 28, y + 18); g.stroke(); },
+    (x, y) => { g.beginPath(); g.moveTo(x - 18, y + 20); g.quadraticCurveTo(x - 4, y - 24, x + 10, y - 10); g.lineTo(x + 20, y - 14); g.moveTo(x - 2, y + 2); g.lineTo(x + 18, y + 20); g.stroke(); },
+    (x, y) => { g.beginPath(); for (let i = 0; i < 5; i++) { g.lineTo(x - 22 + i * 11, y + (i % 2 ? -6 : 6)); } g.stroke(); g.beginPath(); for (let i = 0; i < 5; i++) { g.lineTo(x - 22 + i * 11, y + 14 + (i % 2 ? -6 : 6)); } g.stroke(); },
+    (x, y) => { g.beginPath(); g.moveTo(x, y + 30); g.lineTo(x, y - 20); g.quadraticCurveTo(x + 14, y - 30, x + 6, y - 6); g.stroke(); },
+  ];
+  g.globalAlpha = .4; for (let c = 1; c < 4; c++) g.fillRect(c * 128 - 2, 0, 3, h);
+  g.globalAlpha = 1;
+  for (let r = 0; r < 6; r++) for (let c = 0; c < 4; c++) glyphs[(r * 3 + c * 2) % glyphs.length](c * 128 + 64, r * 85 + 40);
+});
+
+// ---------- ground ----------
+const groundGeo = new THREE.PlaneGeometry(16000, 16000, 220, 220);
+groundGeo.rotateX(-Math.PI / 2);
+const gp = groundGeo.attributes.position, gcol = [];
+for (let i = 0; i < gp.count; i++) {
+  const x = gp.getX(i), z = gp.getZ(i);
+  const d = Math.hypot(x + 250, z - 380);
+  const plateau = THREE.MathUtils.smoothstep(d, 900, 2000);
+  const dunes = Math.sin(x * 0.004) * Math.cos(z * 0.003) * 18 + Math.sin((x + z) * 0.0011) * 30;
+  const y = plateau * dunes - (x > 900 ? THREE.MathUtils.smoothstep(x, 900, 1400) * 35 : 0); // drops east toward the Nile valley
+  gp.setY(i, y);
+  const s = 0.85 + Math.random() * 0.1;
+  gcol.push(0.66 * s, 0.5 * s, 0.32 * s);
+}
+groundGeo.setAttribute('color', new THREE.Float32BufferAttribute(gcol, 3));
+groundGeo.computeVertexNormals();
+const ground = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
+ground.receiveShadow = true; scene.add(ground);
+
+// ---------- pyramids ----------
+const pyrs = [];
+function pyramid(s, key) {
+  const r = s.base / Math.SQRT2;
+  const geo = new THREE.ConeGeometry(r, s.h, 4, 1);
+  geo.rotateY(Math.PI / 4); // faces aligned to the cardinal directions, as built
+  const stone = stoneTex.clone(); stone.needsUpdate = true; stone.repeat.set(s.base / 40, s.h / 9);
+  const glyph = glyphTex.clone(); glyph.needsUpdate = true; glyph.repeat.set(s.base / 45, s.h / 40);
+  const mat = new THREE.MeshStandardMaterial({ map: stone, emissiveMap: glyph, emissive: 0x000000, roughness: 0.95, flatShading: true });
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(s.x, s.y + s.h / 2, s.z); m.castShadow = m.receiveShadow = true;
+  scene.add(m);
+  // plinth of bedrock under raised pyramids
+  if (s.y > 0) { const b = new THREE.Mesh(new THREE.BoxGeometry(s.base + 30, s.y + 2, s.base + 30), new THREE.MeshStandardMaterial({ color: 0xc8a46c, roughness: 1 })); b.position.set(s.x, s.y / 2 - 1, s.z); b.receiveShadow = true; scene.add(b); }
+  const p = { ...s, key, mesh: m, mat, glyph, apex: new THREE.Vector3(s.x, s.y + s.h, s.z) };
+  pyrs.push(p); return p;
+}
+Object.entries(SITES).forEach(([k, s]) => pyramid(s, k));
+// Khafre keeps part of its original limestone casing near the summit
+{ const k = SITES.khafre, ch = 22, r = (k.base / Math.SQRT2) * (ch / k.h);
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(r * 1.01, ch, 4, 1), new THREE.MeshStandardMaterial({ color: 0xf0e2c4, roughness: .6, flatShading: true }));
+  cap.geometry.rotateY(Math.PI / 4); cap.position.set(k.x, k.y + k.h - ch / 2 + .2, k.z); cap.castShadow = true; scene.add(cap); }
+// Queens' pyramids: three east of Khufu (G1-a,b,c), three south of Menkaure (G3-a,b,c)
+const smallMat = new THREE.MeshStandardMaterial({ color: 0xbf9a63, roughness: 1, flatShading: true });
+[[165, -60], [165, 0], [165, 60], [-650, 870], [-589, 870], [-528, 870]].forEach(([x, z], i) => {
+  const b = i < 3 ? 46 : 32, h = i < 3 ? 30 : 20;
+  const m = new THREE.Mesh(new THREE.ConeGeometry(b / Math.SQRT2, h, 4, 1), smallMat);
+  m.geometry.rotateY(Math.PI / 4); m.position.set(x, h / 2, z); m.castShadow = true; scene.add(m);
+});
+
+// ---------- Sphinx (73 m long, 20 m high, facing east) ----------
+const sphinx = new THREE.Group(); const sm = new THREE.MeshStandardMaterial({ color: 0xc89a5e, roughness: 1, flatShading: true });
+const part = (w, h, d, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), sm); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; sphinx.add(m); return m; };
+part(55, 11, 18, -8, 5.5, 0);          // body
+part(16, 4, 4, 26, 2, -5); part(16, 4, 4, 26, 2, 5); // forepaws
+part(10, 9, 14, 17, 12, 0);            // chest
+part(8, 9, 8, 18, 18.5, 0);            // head
+part(5, 10, 13, 16, 16, 0);            // nemes headdress
+const pit = new THREE.Mesh(new THREE.BoxGeometry(110, 1, 70), new THREE.MeshStandardMaterial({ color: 0xb08850, roughness: 1 }));
+pit.position.y = -0.4; sphinx.add(pit);
+sphinx.position.set(SPHINX.x, 0, SPHINX.z); scene.add(sphinx);
+
+// Distant Cairo glow (east) for the night skyline
+const cityGeo = new THREE.BufferGeometry(), cp = [];
+for (let i = 0; i < 2500; i++) cp.push(1500 + Math.random() * 6000, 2 + Math.random() * 30, -4000 + Math.random() * 8000);
+cityGeo.setAttribute('position', new THREE.Float32BufferAttribute(cp, 3));
+const city = new THREE.Points(cityGeo, new THREE.PointsMaterial({ color: 0xffb35c, size: 3, sizeAttenuation: false, transparent: true, opacity: 0 }));
+scene.add(city);
+
+// ---------- light show: lasers ----------
+const beamGeo = new THREE.CylinderGeometry(0.8, 2.5, 4000, 6, 1, true); beamGeo.translate(0, 2000, 0);
+const beams = [];
+const beamCols = [0xe8c46a, 0x3fc1c0, 0x4d7dff, 0xff6a3d];
+pyrs.forEach((p, i) => {
+  for (let j = 0; j < 4; j++) {
+    const m = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: beamCols[(i + j) % 4], transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    m.position.copy(p.apex); scene.add(m); beams.push({ m, p, j, i });
+  }
+});
+// ground searchlights around the Sphinx
+for (let k = 0; k < 6; k++) {
+  const m = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: 0xf4e2b0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+  m.position.set(SPHINX.x + 60 + k * 25, 0, SPHINX.z - 80 + k * 32); scene.add(m); beams.push({ m, search: k });
+}
+const spot = new THREE.PointLight(0xe8c46a, 0, 900, 1.5); spot.position.set(SPHINX.x + 60, 40, SPHINX.z); scene.add(spot);
+
+// ---------- light show: spirits of the pharaohs (particles that morph into symbols) ----------
+const N = 5000;
+function shapePoints(draw) {
+  const W = 320, H = 160, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'); g.fillStyle = g.strokeStyle = '#fff'; draw(g, W, H);
+  const d = g.getImageData(0, 0, W, H).data, pts = [];
+  for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) if (d[(y * W + x) * 4 + 3] > 128) pts.push([(x - W / 2) * 2, (H / 2 - y) * 2]);
+  const out = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) { const q = pts[(Math.random() * pts.length) | 0]; out[i * 3] = q[0] + (Math.random() - .5) * 2; out[i * 3 + 1] = q[1] + (Math.random() - .5) * 2; out[i * 3 + 2] = (Math.random() - .5) * 12; }
+  return out;
+}
+const SHAPES = {
+  ankh: shapePoints((g, W, H) => { g.lineWidth = 12; g.beginPath(); g.ellipse(W / 2, 42, 22, 30, 0, 0, 7); g.stroke(); g.fillRect(W / 2 - 7, 70, 14, 82); g.fillRect(W / 2 - 48, 72, 96, 14); }),
+  eye: shapePoints((g, W, H) => {
+    g.lineWidth = 9; g.beginPath(); g.moveTo(90, 70); g.quadraticCurveTo(160, 20, 235, 70); g.quadraticCurveTo(160, 104, 90, 70); g.stroke();
+    g.beginPath(); g.arc(162, 66, 17, 0, 7); g.fill();
+    g.beginPath(); g.moveTo(85, 40); g.quadraticCurveTo(160, 0, 245, 40); g.stroke();
+    g.beginPath(); g.moveTo(140, 92); g.lineTo(128, 150); g.stroke();
+    g.beginPath(); g.moveTo(175, 92); g.quadraticCurveTo(205, 150, 235, 128); g.quadraticCurveTo(250, 112, 230, 108); g.stroke();
+  }),
+  ...Object.fromEntries(pyrs.map(p => [p.key, shapePoints((g, W, H) => {
+    g.font = `700 ${p.name.length > 6 ? 40 : 52}px Cinzel, Georgia, serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineWidth = 6; const tw = g.measureText(p.name).width;
+    g.beginPath(); g.ellipse(W / 2, H / 2, tw / 2 + 26, 46, 0, 0, 7); g.stroke();         // royal cartouche
+    g.fillRect(W / 2 + tw / 2 + 24, H / 2 - 30, 7, 60);
+    g.fillText(p.name, W / 2, H / 2 + 3);
+  })])),
+};
+const cloud = new Float32Array(N * 3), rise = new Float32Array(N * 3);
+for (let i = 0; i < N; i++) {
+  cloud.set([(Math.random() - .5) * 3000, Math.random() * 1400 - 200, (Math.random() - .5) * 600], i * 3);
+  const a = Math.random() * Math.PI * 2, r = Math.random() * 260;
+  rise.set([Math.cos(a) * r, -380 + Math.random() * 60, Math.sin(a) * r * .3], i * 3);
+}
+const spGeo = new THREE.BufferGeometry();
+const spPos = new Float32Array(rise); spGeo.setAttribute('position', new THREE.BufferAttribute(spPos, 3));
+const dot = canvasTex(64, 64, (g) => { const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.3, 'rgba(255,230,160,.7)'); gr.addColorStop(1, 'rgba(255,200,80,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); });
+const spMat = new THREE.PointsMaterial({ size: 9, map: dot, color: 0xffd98a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+const spirits = new THREE.Points(spGeo, spMat); spirits.frustumCulled = false;
+const spiritGroup = new THREE.Group(); spiritGroup.add(spirits); scene.add(spiritGroup);
+let target = rise;
+
+// ---------- show script ----------
+const SCRIPT = [
+  { t: 0,  shape: 'rise', glow: 'all', cap: 'At dusk, the Ka of the kings awakens', sub: 'Spirits rise from the stones of Giza' },
+  { t: 7,  shape: 'ankh', glow: 'all', cap: 'Ankh · the key of eternal life', sub: 'Carried by every pharaoh into the afterlife' },
+  { t: 15, shape: 'khufu', glow: 'khufu', cap: 'Khufu', sub: 'Great Pyramid · c. 2560 BC · about 2.3 million blocks' },
+  { t: 22, shape: 'khafre', glow: 'khafre', cap: 'Khafre', sub: 'His Sphinx has faced the sunrise for 45 centuries' },
+  { t: 29, shape: 'menkaure', glow: 'menkaure', cap: 'Menkaure', sub: 'The smallest of the three, cased in red Aswan granite' },
+  { t: 36, shape: 'eye', glow: 'all', cap: 'The Eye of Horus watches over you', sub: 'Protection, royal power and good health' },
+  { t: 44, shape: 'cloud', glow: 'all', cap: 'Giza Eternal', sub: 'Where the pharaohs still speak · Every night under the desert stars' },
+];
+const LOOP = 52;
+const capEl = document.getElementById('cap');
+let showOn = false, showT = 0, step = -1;
+
+// ---------- day / night ----------
+let night = 0, nightTarget = 0;
+const C = (h) => new THREE.Color(h);
+const DAY = { top: C(0x3f7fc4), bot: C(0xe9d3a8), fog: C(0xe9d3a8) }, NIGHT = { top: C(0x03050f), bot: C(0x171b38), fog: C(0x0d1024) };
+const tmp = new THREE.Color();
+
+function setNight(on) {
+  nightTarget = on ? 1 : 0;
+  bDay.setAttribute('aria-pressed', !on); bNight.setAttribute('aria-pressed', on);
+  if (!on && showOn) toggleShow();
+}
+function toggleShow() {
+  showOn = !showOn; bShow.setAttribute('aria-pressed', showOn);
+  if (showOn) { setNight(true); showT = 0; step = -1; } else { capEl.style.opacity = 0; target = rise; }
+}
+const bDay = document.getElementById('bDay'), bNight = document.getElementById('bNight'), bShow = document.getElementById('bShow'), bView = document.getElementById('bView'), bSound = document.getElementById('bSound');
+bDay.onclick = () => setNight(false);
+bNight.onclick = () => setNight(true);
+bShow.onclick = toggleShow;
+
+// ---------- camera views ----------
+const VIEWS = [
+  { n: 'Aerial', pos: [650, 380, 1150], look: [-250, 40, 380] },
+  { n: 'Sphinx', pos: [470, 14, 470], look: [-200, 70, 250] },
+  { n: 'Khufu foot', pos: [140, 1.7, -130], look: [0, 90, 0] },   // eye level, 1.7 m: feel the true scale
+  { n: 'Desert', pos: [-1500, 60, 1900], look: [-300, 60, 350] },
+];
+let vi = 0, fly = null;
+function goView(i, instant) {
+  const v = VIEWS[i]; bView.textContent = 'View: ' + v.n;
+  const to = { pos: new THREE.Vector3(...v.pos), look: new THREE.Vector3(...v.look) };
+  if (instant) { camera.position.copy(to.pos); controls.target.copy(to.look); return; }
+  fly = { from: { pos: camera.position.clone(), look: controls.target.clone() }, to, t: 0 };
+}
+bView.onclick = () => { vi = (vi + 1) % VIEWS.length; goView(vi); };
+goView(0, true);
+
+// ---------- ambient sound (starts on click) ----------
+let audio = null;
+bSound.onclick = () => {
+  if (!audio) {
+    const ac = new (window.AudioContext || window.webkitAudioContext)(), out = ac.createGain(); out.gain.value = 0; out.connect(ac.destination);
+    [55, 82.4, 110, 164.8].forEach((f, i) => { const o = ac.createOscillator(), g = ac.createGain(); o.type = i % 2 ? 'sine' : 'triangle'; o.frequency.value = f; o.detune.value = (i - 1.5) * 6; g.gain.value = 0.12 / (i + 1); o.connect(g).connect(out); o.start(); });
+    const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = 0.07; lg.gain.value = 0.05; lfo.connect(lg).connect(out.gain); lfo.start();
+    audio = { ac, out, on: false };
+  }
+  audio.on = !audio.on; audio.ac.resume();
+  audio.out.gain.setTargetAtTime(audio.on ? 0.35 : 0, audio.ac.currentTime, 0.6);
+  bSound.setAttribute('aria-pressed', audio.on);
+};
+
+// ---------- labels ----------
+const labelsEl = document.getElementById('labels');
+const labels = [...pyrs.map(p => ({ txt: p.name, at: p.apex.clone().add(new THREE.Vector3(0, 14, 0)) })), { txt: 'SPHINX', at: new THREE.Vector3(SPHINX.x, 32, SPHINX.z) }]
+  .map(l => { const d = document.createElement('div'); d.className = 'label'; d.textContent = l.txt; labelsEl.appendChild(d); return { ...l, el: d }; });
+const pv = new THREE.Vector3();
+
+// ---------- loop ----------
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (reduce) controls.autoRotate = false;
+const clock = new THREE.Clock();
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
+
+  if (fly) {
+    fly.t = Math.min(1, fly.t + dt / 2.5); const e = fly.t < .5 ? 2 * fly.t * fly.t : 1 - Math.pow(-2 * fly.t + 2, 2) / 2;
+    camera.position.lerpVectors(fly.from.pos, fly.to.pos, e); controls.target.lerpVectors(fly.from.look, fly.to.look, e);
+    if (fly.t === 1) fly = null;
+  }
+  controls.update();
+
+  // day <-> night blend
+  night += (nightTarget - night) * Math.min(1, dt * 1.2);
+  skyUni.top.value.copy(DAY.top).lerp(NIGHT.top, night);
+  skyUni.bottom.value.copy(DAY.bot).lerp(NIGHT.bot, night);
+  scene.fog.color.copy(DAY.fog).lerp(NIGHT.fog, night);
+  sun.intensity = THREE.MathUtils.lerp(1.6, 0.12, night);
+  sun.color.copy(tmp.set(0xfff1d6).lerp(C(0x9fb4ff), night));
+  hemi.intensity = THREE.MathUtils.lerp(0.55, 0.05, night);
+  stars.material.opacity = night; moon.material.opacity = night; city.material.opacity = night * 0.85;
+  renderer.toneMappingExposure = THREE.MathUtils.lerp(0.9, 1.1, night);
+
+  // light show
+  const show = showOn ? night : 0;
+  if (showOn) {
+    showT = (showT + dt) % LOOP;
+    let s = 0; for (let i = 0; i < SCRIPT.length; i++) if (showT >= SCRIPT[i].t) s = i;
+    if (s !== step) {
+      step = s; const sc = SCRIPT[s];
+      target = sc.shape === 'rise' ? rise : sc.shape === 'cloud' ? cloud : SHAPES[sc.shape];
+      capEl.style.opacity = 0;
+      setTimeout(() => { if (!showOn) return; capEl.innerHTML = sc.cap + '<span>' + sc.sub + '</span>'; capEl.style.opacity = 1; }, 450);
+    }
+  }
+  const sc = SCRIPT[Math.max(step, 0)];
+  const hue = (t * 0.03) % 1;
+  pyrs.forEach((p, i) => {
+    const focus = sc.glow === 'all' || sc.glow === p.key ? 1 : 0.25;
+    const pulse = 0.65 + 0.35 * Math.sin(t * 1.6 + i * 2.1);
+    p.mat.emissive.setHSL((0.12 + (step === 5 ? hue : 0) + i * 0.08 * (step === 0 ? 0 : 1)) % 1, 0.85, 0.5);
+    p.mat.emissiveIntensity = show * focus * pulse * 2.6;
+    p.glyph.offset.y = (t * 0.04) % 1;                           // glyphs climb the faces
+  });
+  beams.forEach((b) => {
+    if (b.search !== undefined) {
+      b.m.rotation.z = Math.sin(t * 0.4 + b.search) * 0.5; b.m.rotation.x = Math.cos(t * 0.3 + b.search * 1.7) * 0.35;
+      b.m.material.opacity = show * 0.12;
+    } else {
+      const focus = sc.glow === 'all' || sc.glow === b.p.key ? 1 : 0.15;
+      const a = t * 0.35 + b.j * Math.PI / 2 + b.i;
+      b.m.rotation.set(Math.sin(a) * 0.55, 0, Math.cos(a) * 0.55);
+      b.m.material.opacity = show * focus * (step === 5 ? 0.5 : 0.28);
+    }
+  });
+  spot.intensity = show * 1.5;
+
+  // spirits
+  spMat.opacity += ((show > 0.5 ? 0.95 : 0) - spMat.opacity) * Math.min(1, dt * 1.5);
+  if (spMat.opacity > 0.01) {
+    const k = Math.min(1, dt * 1.8);
+    for (let i = 0; i < N * 3; i += 3) {
+      const wob = Math.sin(t * 2 + i) * 0.6;
+      spPos[i] += (target[i] - spPos[i]) * k + wob;
+      spPos[i + 1] += (target[i + 1] + (target === rise ? (t * 40 + i) % 300 : 0) - spPos[i + 1]) * k;
+      spPos[i + 2] += (target[i + 2] - spPos[i + 2]) * k;
+    }
+    spGeo.attributes.position.needsUpdate = true;
+  }
+  spiritGroup.position.set(-260, 520, 330);
+  spiritGroup.quaternion.copy(camera.quaternion);                // symbols always face the viewer
+  const dist = camera.position.distanceTo(spiritGroup.position);
+  spiritGroup.scale.setScalar(THREE.MathUtils.clamp(dist / 1800, 0.35, 1.6));
+
+  // labels
+  labels.forEach(l => {
+    pv.copy(l.at).project(camera);
+    const vis = pv.z < 1 && Math.abs(pv.x) < 1.1 && Math.abs(pv.y) < 1.1 && camera.position.distanceTo(l.at) > 250;
+    l.el.hidden = !vis || show > 0.5;
+    if (vis) { l.el.style.left = (pv.x * .5 + .5) * innerWidth + 'px'; l.el.style.top = (-pv.y * .5 + .5) * innerHeight + 'px'; }
+  });
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+renderer.domElement.addEventListener('pointerdown', () => { controls.autoRotate = false; });
+})();
+</script>
