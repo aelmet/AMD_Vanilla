@@ -27,10 +27,17 @@ button[aria-pressed="true"]{background:var(--gold);color:var(--ink);border-color
 .facts{position:fixed;top:calc(16px + env(safe-area-inset-top,0px));right:max(16px,env(safe-area-inset-right,0px));font-family:var(--mono);font-size:11px;line-height:1.7;background:var(--glass);border:1px solid var(--line);padding:10px 12px;font-variant-numeric:tabular-nums;backdrop-filter:blur(6px)}
 .facts b{color:var(--gold);font-weight:400}
 .label{position:fixed;transform:translate(-50%,-100%);font-family:var(--display);font-size:12px;letter-spacing:.2em;color:var(--gold-soft);text-shadow:0 1px 6px #000;pointer-events:none;white-space:nowrap}
+.bars::before,.bars::after{content:"";position:fixed;left:0;right:0;height:0;background:#000;transition:height 1.2s ease;pointer-events:none;z-index:0}
+.bars::before{top:0}.bars::after{bottom:0}
+.fly .bars::before,.fly .bars::after{height:7vh}
+.brand,.rail,.caption,.facts{z-index:1}
+.fly .facts,.fly .label{display:none}
+.brand{transition:top 1.2s ease}.fly .brand{top:calc(7vh + 14px + env(safe-area-inset-top,0px))}
 @media (max-width:640px){.facts{display:none}.caption{bottom:calc(150px + env(safe-area-inset-bottom,0px))}}
 </style>
 
 <div id="app"></div>
+<div class="bars"></div>
 <header class="brand">
   <small>Giza Plateau · 1:1 scale</small>
   <h1>Giza Eternal</h1>
@@ -45,6 +52,7 @@ button[aria-pressed="true"]{background:var(--gold);color:var(--ink);border-color
 <div class="caption" id="cap" aria-live="polite"></div>
 <div id="labels"></div>
 <nav class="rail" aria-label="Scene controls">
+  <button id="bFly" aria-pressed="true">Fly-over</button>
   <button id="bDay" aria-pressed="true">Day</button>
   <button id="bNight" aria-pressed="false">Night</button>
   <button id="bShow" aria-pressed="false">Light show</button>
@@ -109,7 +117,7 @@ moon.position.set(-4000, 3200, -7000); scene.add(moon);
 // ---------- lights ----------
 const hemi = new THREE.HemisphereLight(0xbfd8ff, 0xc9a46a, 0.6); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff1d6, 1.6);
-sun.position.set(1800, 2200, 900); sun.castShadow = true;
+sun.position.set(2150, 1100, 1750); sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -1300, right: 1300, top: 1300, bottom: -1300, near: 100, far: 6000 });
 sun.target.position.set(-250, 0, 350); scene.add(sun, sun.target);
@@ -152,6 +160,15 @@ const glyphTex = canvasTex(512, 512, (g, w, h) => {
 });
 
 // ---------- ground ----------
+const sandTex = canvasTex(512, 512, (g, w, h) => {
+  const id = g.createImageData(w, h);
+  for (let i = 0; i < w * h; i++) {
+    const x = i % w, y = (i / w) | 0, v = 200 + Math.sin(y * 0.1473 + Math.sin(x * 0.02454) * 2) * 9 + Math.random() * 28;
+    id.data.set([v, v * 0.87, v * 0.68, 255], i * 4);
+  }
+  g.putImageData(id, 0, 0);
+});
+sandTex.encoding = THREE.sRGBEncoding; sandTex.repeat.set(320, 320);
 const groundGeo = new THREE.PlaneGeometry(16000, 16000, 220, 220);
 groundGeo.rotateX(-Math.PI / 2);
 const gp = groundGeo.attributes.position, gcol = [];
@@ -160,14 +177,16 @@ for (let i = 0; i < gp.count; i++) {
   const d = Math.hypot(x + 250, z - 380);
   const plateau = THREE.MathUtils.smoothstep(d, 900, 2000);
   const dunes = Math.sin(x * 0.004) * Math.cos(z * 0.003) * 18 + Math.sin((x + z) * 0.0011) * 30;
-  const y = plateau * dunes - (x > 900 ? THREE.MathUtils.smoothstep(x, 900, 1400) * 35 : 0); // drops east toward the Nile valley
+  const y = plateau * dunes * (1 - THREE.MathUtils.smoothstep(x, 900, 1300)) - (x > 900 ? THREE.MathUtils.smoothstep(x, 900, 1400) * 35 : 0); // drops east toward the Nile valley
   gp.setY(i, y);
   const s = 0.85 + Math.random() * 0.1;
-  gcol.push(0.66 * s, 0.5 * s, 0.32 * s);
+  if (x > 5300) gcol.push(0.3 * s, 0.42 * s, 0.2 * s);          // Nile valley fields
+  else if (x > 1150) gcol.push(0.62 * s, 0.6 * s, 0.56 * s);  // Giza city ground
+  else gcol.push(1 * s, 0.9 * s, 0.75 * s);
 }
 groundGeo.setAttribute('color', new THREE.Float32BufferAttribute(gcol, 3));
 groundGeo.computeVertexNormals();
-const ground = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
+const ground = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({ vertexColors: true, map: sandTex, roughness: 1 }));
 ground.receiveShadow = true; scene.add(ground);
 
 // ---------- pyramids ----------
@@ -212,9 +231,16 @@ const pit = new THREE.Mesh(new THREE.BoxGeometry(110, 1, 70), new THREE.MeshStan
 pit.position.y = -0.4; sphinx.add(pit);
 sphinx.position.set(SPHINX.x, 0, SPHINX.z); scene.add(sphinx);
 
+// Giza city east of the plateau, then the Nile
+const city3d = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1).translate(0, .5, 0), new THREE.MeshStandardMaterial({ color: 0xcbbba0, roughness: .9, emissive: 0xffa040, emissiveIntensity: 0 }), 3500);
+{ const m = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+  for (let i = 0; i < 3500; i++) { v.set(1250 + Math.random() * 4000, -35, -4500 + Math.random() * 7500); sc.set(12 + Math.random() * 25, 6 + Math.random() * Math.random() * 45, 12 + Math.random() * 25); city3d.setMatrixAt(i, m.compose(v, q, sc)); } }
+city3d.receiveShadow = true; scene.add(city3d);
+const nile = new THREE.Mesh(new THREE.PlaneGeometry(450, 16000).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x2d5d6e, roughness: .25, metalness: .2 }));
+nile.position.set(6200, -34, 0); scene.add(nile);
 // Distant Cairo glow (east) for the night skyline
 const cityGeo = new THREE.BufferGeometry(), cp = [];
-for (let i = 0; i < 2500; i++) cp.push(1500 + Math.random() * 6000, 2 + Math.random() * 30, -4000 + Math.random() * 8000);
+for (let i = 0; i < 2500; i++) cp.push(1250 + Math.random() * 4000, -33 + Math.random() * 40, -4000 + Math.random() * 8000);
 cityGeo.setAttribute('position', new THREE.Float32BufferAttribute(cp, 3));
 const city = new THREE.Points(cityGeo, new THREE.PointsMaterial({ color: 0xffb35c, size: 3, sizeAttenuation: false, transparent: true, opacity: 0 }));
 scene.add(city);
@@ -273,6 +299,8 @@ for (let i = 0; i < N; i++) {
 const spGeo = new THREE.BufferGeometry();
 const spPos = new Float32Array(rise); spGeo.setAttribute('position', new THREE.BufferAttribute(spPos, 3));
 const dot = canvasTex(64, 64, (g) => { const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.3, 'rgba(255,230,160,.7)'); gr.addColorStop(1, 'rgba(255,200,80,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); });
+const sunDisc = new THREE.Sprite(new THREE.SpriteMaterial({ map: dot, color: 0xfff1c8, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+sunDisc.position.copy(sun.position).sub(sun.target.position).normalize().multiplyScalar(11000); sunDisc.scale.setScalar(1500); scene.add(sunDisc);
 const spMat = new THREE.PointsMaterial({ size: 9, map: dot, color: 0xffd98a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
 const spirits = new THREE.Points(spGeo, spMat); spirits.frustumCulled = false;
 const spiritGroup = new THREE.Group(); spiritGroup.add(spirits); scene.add(spiritGroup);
@@ -326,7 +354,7 @@ function goView(i, instant) {
   if (instant) { camera.position.copy(to.pos); controls.target.copy(to.look); return; }
   fly = { from: { pos: camera.position.clone(), look: controls.target.clone() }, to, t: 0 };
 }
-bView.onclick = () => { vi = (vi + 1) % VIEWS.length; goView(vi); };
+bView.onclick = () => { setFly(false); vi = (vi + 1) % VIEWS.length; goView(vi); };
 goView(0, true);
 
 // ---------- ambient sound (starts on click) ----------
@@ -352,16 +380,47 @@ const pv = new THREE.Vector3();
 // ---------- loop ----------
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 if (reduce) controls.autoRotate = false;
+// ---------- drone fly-over: [camera position, look-at] waypoints, closed loop ----------
+const FLY = [
+  [[1800, 700, 1500], [-250, 60, 350]],    // approach over Giza city
+  [[1100, 330, 1050], [-100, 60, 300]],
+  [[680, 110, 680], [320, 15, 420]],       // dive toward the Sphinx
+  [[430, 24, 440], [318, 18, 420]],        // eye to eye with the Sphinx
+  [[120, 80, 400], [-328, 90, 344]],       // up Khafre's causeway
+  [[-140, 210, 120], [-328, 110, 344]],    // between Khafre and Khufu
+  [[120, 230, -220], [0, 130, 0]],         // over Khufu's summit
+  [[-260, 270, -260], [-100, 90, 150]],
+  [[-1300, 260, 1300], [-300, 60, 380]],   // the classic desert panorama, all three aligned
+  [[-700, 520, 2300], [-250, 60, 350]],
+  [[1100, 750, 2400], [-250, 60, 350]],
+];
+const flyPos = new THREE.CatmullRomCurve3(FLY.map(w => new THREE.Vector3(...w[0])), true, 'centripetal');
+const flyLook = new THREE.CatmullRomCurve3(FLY.map(w => new THREE.Vector3(...w[1])), true, 'centripetal');
+const FLY_SECS = 140, lookV = new THREE.Vector3(), bFly = document.getElementById('bFly');
+let flying = false, flyT = 0;
+function setFly(on) {
+  if (!on && flying) controls.target.copy(lookV);
+  if (on) fly = null;
+  flying = on; bFly.setAttribute('aria-pressed', on); document.body.classList.toggle('fly', on);
+}
+bFly.onclick = () => setFly(!flying);
+setFly(!reduce);
+
 const clock = new THREE.Clock();
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
 
+  if (flying) {
+    flyT = (flyT + dt / FLY_SECS) % 1;
+    flyPos.getPoint(flyT, camera.position); camera.lookAt(flyLook.getPoint(flyT, lookV));
+  } else {
   if (fly) {
     fly.t = Math.min(1, fly.t + dt / 2.5); const e = fly.t < .5 ? 2 * fly.t * fly.t : 1 - Math.pow(-2 * fly.t + 2, 2) / 2;
     camera.position.lerpVectors(fly.from.pos, fly.to.pos, e); controls.target.lerpVectors(fly.from.look, fly.to.look, e);
     if (fly.t === 1) fly = null;
   }
   controls.update();
+  }
 
   // day <-> night blend
   night += (nightTarget - night) * Math.min(1, dt * 1.2);
@@ -371,7 +430,7 @@ function frame() {
   sun.intensity = THREE.MathUtils.lerp(1.6, 0.12, night);
   sun.color.copy(tmp.set(0xfff1d6).lerp(C(0x9fb4ff), night));
   hemi.intensity = THREE.MathUtils.lerp(0.55, 0.05, night);
-  stars.material.opacity = night; moon.material.opacity = night; city.material.opacity = night * 0.85;
+  stars.material.opacity = night; moon.material.opacity = night; city.material.opacity = night * 0.85; city3d.material.emissiveIntensity = night * 0.12; sunDisc.material.opacity = 1 - night;
   renderer.toneMappingExposure = THREE.MathUtils.lerp(0.9, 1.1, night);
 
   // light show
@@ -439,6 +498,6 @@ function frame() {
 requestAnimationFrame(frame);
 
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
-renderer.domElement.addEventListener('pointerdown', () => { controls.autoRotate = false; });
+renderer.domElement.addEventListener('pointerdown', () => { controls.autoRotate = false; setFly(false); });
 })();
 </script>
